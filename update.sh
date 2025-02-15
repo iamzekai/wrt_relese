@@ -114,7 +114,9 @@ remove_unwanted_packages() {
     fi
 
     # 临时放一下，清理脚本
-    find $BUILD_DIR/package/base-files/files/etc/uci-defaults/ -type f -name "9*.sh" -exec rm -f {} +
+    if [ -d "$BUILD_DIR/target/linux/qualcommax/base-files/etc/uci-defaults" ]; then
+        find "$BUILD_DIR/target/linux/qualcommax/base-files/etc/uci-defaults/" -type f -name "99*.sh" -exec rm -f {} +
+    fi
 }
 
 update_golang() {
@@ -131,8 +133,8 @@ install_small8() {
         luci-app-passwall alist luci-app-alist smartdns luci-app-smartdns v2dat mosdns luci-app-mosdns \
         adguardhome luci-app-adguardhome ddns-go luci-app-ddns-go taskd luci-lib-xterm luci-lib-taskd \
         luci-app-store quickstart luci-app-quickstart luci-app-istorex luci-app-cloudflarespeedtest \
-        luci-theme-argon netdata luci-app-netdata lucky luci-app-lucky luci-app-openclash mihomo \
-        luci-app-mihomo luci-app-homeproxy luci-app-amlogic
+        luci-theme-argon netdata luci-app-netdata lucky luci-app-lucky luci-app-openclash luci-app-homeproxy \
+        luci-app-amlogic nikki luci-app-nikki
 }
 
 install_feeds() {
@@ -202,14 +204,10 @@ fix_mk_def_depends() {
 }
 
 add_wifi_default_set() {
-    local ipq60xx_uci_dir="$BUILD_DIR/target/linux/qualcommax/ipq60xx/base-files/etc/uci-defaults"
-    local ipq807x_uci_dir="$BUILD_DIR/target/linux/qualcommax/ipq807x/base-files/etc/uci-defaults"
+    local qualcommax_uci_dir="$BUILD_DIR/target/linux/qualcommax/base-files/etc/uci-defaults"
     local filogic_uci_dir="$BUILD_DIR/target/linux/mediatek/filogic/base-files/etc/uci-defaults"
-    if [ -d "$ipq60xx_uci_dir" ]; then
-        install -Dm755 "$BASE_PATH/patches/992_set-wifi-uci.sh" "$ipq60xx_uci_dir/992_set-wifi-uci.sh"
-    fi
-    if [ -d "$ipq807x_uci_dir" ]; then
-        install -Dm755 "$BASE_PATH/patches/992_set-wifi-uci.sh" "$ipq807x_uci_dir/992_set-wifi-uci.sh"
+    if [ -d "$qualcommax_uci_dir" ]; then
+        install -Dm755 "$BASE_PATH/patches/992_set-wifi-uci.sh" "$qualcommax_uci_dir/992_set-wifi-uci.sh"
     fi
     if [ -d "$filogic_uci_dir" ]; then
         install -Dm755 "$BASE_PATH/patches/992_set-wifi-uci.sh" "$filogic_uci_dir/992_set-wifi-uci.sh"
@@ -333,8 +331,8 @@ chanage_cpuusage() {
         rm -f "$imm_script1"
     fi
 
-    install -Dm755 "$BASE_PATH/patches/cpuusage" "$BUILD_DIR/target/linux/qualcommax/ipq60xx/base-files/sbin/cpuusage"
-    install -Dm755 "$BASE_PATH/patches/cpuusage" "$BUILD_DIR/target/linux/qualcommax/ipq807x/base-files/sbin/cpuusage"
+    install -Dm755 "$BASE_PATH/patches/cpuusage" "$BUILD_DIR/target/linux/qualcommax/base-files/sbin/cpuusage"
+    install -Dm755 "$BASE_PATH/patches/hnatusage" "$BUILD_DIR/target/linux/mediatek/filogic/base-files/sbin/cpuusage"
 }
 
 update_tcping() {
@@ -393,10 +391,6 @@ update_pw_ha_chk() {
     local ha_lua_path="$pw_share_dir/haproxy.lua"
     local smartdns_lua_path="$pw_share_dir/helper_smartdns_add.lua"
     local rules_dir="$pw_share_dir/rules"
-
-    # 删除旧的 haproxy_check.sh 文件并安装新的
-    [ -f "$pw_ha_path" ] && rm -f "$pw_ha_path"
-    install -Dm755 "$new_path" "$pw_ha_path"
 
     # 修改 haproxy.lua 文件中的 rise 和 fall 参数
     [ -f "$ha_lua_path" ] && sed -i 's/rise 1 fall 3/rise 3 fall 2/g' "$ha_lua_path"
@@ -490,6 +484,97 @@ update_homeproxy() {
     fi
 }
 
+update_dnsmasq_conf() {
+    local file="$BUILD_DIR/package/network/services/dnsmasq/files/dhcp.conf"
+    if [ -d "$(dirname "$file")" ] && [ -f "$file" ]; then
+        sed -i '/dns_redirect/d' "$file"
+    fi
+}
+
+# 更新版本
+update_package() {
+    local dir="$BUILD_DIR/feeds/$1"
+    local mk_path="$dir/Makefile"
+    if [ -d "${mk_path%/*}" ] && [ -f "$mk_path" ]; then
+        # 提取repo
+        local PKG_REPO=$(grep -oE "^PKG_SOURCE_URL.*tar\.gz" $mk_path | awk -F"/" '{print $(NF - 2) "/" $(NF -1 )}')
+        if [ -z $PKG_REPO ]; then
+            return 1
+        fi
+        local PKG_VER=$(curl -sL "https://api.github.com/repos/$PKG_REPO/releases" | jq -r "map(select(.prerelease|not)) | first | .tag_name")
+        local PKG_HASH=$(curl -sL "https://codeload.github.com/$PKG_REPO/tar.gz/$PKG_VER" | sha256sum | cut -b -64)
+
+        # 删除PKG_VER开头的v
+        PKG_VER=${PKG_VER#v}
+
+        sed -i 's/^PKG_VERSION:=.*/PKG_VERSION:='$PKG_VER'/g' $mk_path
+        sed -i 's/^PKG_HASH:=.*/PKG_HASH:='$PKG_HASH'/g' $mk_path
+    fi
+}
+
+update_lucky() {
+    local mk_dir="$BUILD_DIR/feeds/small8/lucky/Makefile"
+    if [ -d "${mk_dir%/*}" ] && [ -f "$mk_dir" ]; then
+        sed -i '/Build\/Prepare/ a\	[ -f $(TOPDIR)/../patches/lucky_Linux_$(LUCKY_ARCH).tar.gz ] && install -Dm644 $(TOPDIR)/../patches/lucky_Linux_$(LUCKY_ARCH).tar.gz $(PKG_BUILD_DIR)/$(PKG_NAME)_$(PKG_VERSION)_Linux_$(LUCKY_ARCH).tar.gz' "$mk_dir"
+        sed -i '/wget/d' "$mk_dir"
+    fi
+}
+
+# 添加系统升级时的备份信息
+function add_backup_info_to_sysupgrade() {
+    local conf_path="$BUILD_DIR/package/base-files/files/etc/sysupgrade.conf"
+
+    if [ -f "$conf_path" ]; then
+        cat >"$conf_path" <<'EOF'
+/etc/AdGuardHome.yaml
+/etc/lucky/
+EOF
+    fi
+}
+
+# 更新启动顺序
+function update_script_priority() {
+    # 更新qca-nss驱动的启动顺序
+    local qca_drv_path="$BUILD_DIR/package/feeds/nss_packages/qca-nss-drv/files/qca-nss-drv.init"
+    if [ -d "${qca_drv_path%/*}" ] && [ -f "$qca_drv_path" ]; then
+        sed -i 's/START=.*/START=88/g' "$qca_drv_path"
+    fi
+
+    # 更新pbuf服务的启动顺序
+    local pbuf_path="$BUILD_DIR/package/kernel/mac80211/files/qca-nss-pbuf.init"
+    if [ -d "${pbuf_path%/*}" ] && [ -f "$pbuf_path" ]; then
+        sed -i 's/START=.*/START=89/g' "$pbuf_path"
+    fi
+
+    # 更新mosdns服务的启动顺序
+    local mosdns_path="$BUILD_DIR/package/feeds/small8/luci-app-mosdns/root/etc/init.d/mosdns"
+    if [ -d "${mosdns_path%/*}" ] && [ -f "$mosdns_path" ]; then
+        sed -i 's/START=.*/START=92/g' "$mosdns_path"
+    fi
+}
+
+function optimize_smartDNS() {
+    local smartdns_custom="$BUILD_DIR/package/feeds/small8/smartdns/conf/custom.conf"
+
+    # 检查配置文件所在的目录和文件是否存在
+    if [ -d "${smartdns_custom%/*}" ] && [ -f "$smartdns_custom" ]; then
+        # 优化配置选项：
+        # serve-expired-ttl: 缓存有效期(单位：小时)，默认值影响DNS解析速度
+        # serve-expired-reply-ttl: 过期回复TTL
+        # max-reply-ip-num: 最大IP数
+        # dualstack-ip-selection-threshold: IPv6优先的阈值
+        # server: 配置上游DNS
+        echo "优化SmartDNS配置"
+        cat >"$smartdns_custom" <<'EOF'
+serve-expired-ttl 7200
+serve-expired-reply-ttl 5
+max-reply-ip-num 3
+dualstack-ip-selection-threshold 15
+server 223.5.5.5 -bootstrap-dns
+EOF
+    fi
+}
+
 main() {
     clone_repo
     clean_up
@@ -523,7 +608,13 @@ main() {
     update_nss_diag
     update_menu_location
     fix_compile_coremark
+    update_dnsmasq_conf
+    update_lucky
+    add_backup_info_to_sysupgrade
     install_feeds
+    update_package "small8/sing-box"
+    update_script_priority
+    optimize_smartDNS
 }
 
 main "$@"

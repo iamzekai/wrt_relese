@@ -1,4 +1,4 @@
-首先装好 Linux 系统，推荐 Ubuntu LTS  
+首先安装 Linux 系统，推荐 Ubuntu LTS  
 
 安装编译依赖  
 sudo apt -y update  
@@ -10,7 +10,7 @@ sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_e
 git clone https://github.com/ZqinKing/wrt_relese.git  
 cd wrt_relese  
   
-编译京东云雅典娜、亚瑟、太乙、AX5(JDC版):  
+编译京东云雅典娜(02)、亚瑟(01)、太乙(07)、AX5(JDC版):  
 ./build.sh jdcloud_ipq60xx_immwrt  
 ./build.sh jdcloud_ipq60xx_libwrt  
   
@@ -23,6 +23,9 @@ cd wrt_relese
 编译红米AX5:  
 ./build.sh redmi_ax5_immwrt  
   
+编译红米AX6:  
+./build.sh redmi_ax6_immwrt  
+  
 编译红米AX6000:  
 ./build.sh redmi_ax6000_immwrt21  
   
@@ -33,7 +36,7 @@ cd wrt_relese
 ./build.sh n1_immwrt  
   
 编译X64:  
-./build.sh x64_immwrt.config  
+./build.sh x64_immwrt  
   
 三方插件源自：https://github.com/kenzok8/small-package.git  
   
